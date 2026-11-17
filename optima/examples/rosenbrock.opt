@@ -1,0 +1,11 @@
+# The Rosenbrock "banana" function: a classic hard case for gradient descent.
+# Its minimum is at (1, 1). Newton's method uses the curvature and gets there
+# in a handful of steps.
+rosen(x, y) = (1 - x)^2 + 100 * (y - x^2)^2
+
+p = minimize rosen from (-1.2, 1) using newton(steps=50, tol=1e-5)
+print "newton:", p, "after", iterations, "iterations"
+print "rosen(p) =", rosen(p)
+
+q = minimize rosen from (-1.2, 1) using gradient_descent(lr=0.001, steps=300)
+print "gradient descent after", iterations, "steps is only at", q

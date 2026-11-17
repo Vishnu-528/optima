@@ -1,0 +1,12 @@
+# Find the minimum of a bowl-shaped function of two variables.
+target = 3
+
+f(x, y) = (x - target)^2 + (y + 1)^2
+
+r = minimize f from (0, 0) using gradient_descent(lr=0.1, steps=500, tol=1e-6)
+
+print "minimum at", r
+print "value there:", f(r)
+print "iterations used:", iterations
+print "gradient at (1, 2):", gradient f at (1, 2)
+print "x =", r[0], " y =", r[1]

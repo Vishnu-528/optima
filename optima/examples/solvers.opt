@@ -1,0 +1,14 @@
+# The same problem solved three ways. Compare how many iterations each needs.
+f(x, y) = (x - 1)^2 + 10 * (y - 2)^2 + x * y
+
+a = minimize f from (0, 0) using gradient_descent(lr=0.04, steps=2000)
+print "gradient descent:", a, "in", iterations, "iterations"
+
+b = minimize f from (0, 0) using momentum(lr=0.02, beta=0.8, steps=2000)
+print "momentum:        ", b, "in", iterations, "iterations"
+
+c = minimize f from (0, 0) using newton
+print "newton:          ", c, "in", iterations, "iterations"
+
+print "f at the minimum:", f(c)
+print "gradient there:  ", gradient f at c

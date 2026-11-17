@@ -1,0 +1,15 @@
+# maximize works like minimize, climbing instead of descending.
+height(x) = 5 - (x - 2)^2
+
+top = maximize height from 0 using gradient_descent(lr=0.2)
+print "highest point at x =", top[0], "height", height(top)
+
+# A function with built-ins: x * exp(-x) peaks at x = 1.
+g(x) = x * exp(-x)
+m = maximize g from 0.2 using newton
+print "x * exp(-x) peaks at", m, "value", g(m)
+
+# sin + cos has its first peak at pi/4
+w(t) = sin(t) + cos(t)
+peak = maximize w from 0 using gradient_descent(lr=0.5, tol=1e-5)
+print "sin + cos peaks at t =", peak[0], "(pi/4 = 0.785398)"

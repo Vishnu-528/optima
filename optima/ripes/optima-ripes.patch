@@ -1,0 +1,1195 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index bef839e..8139c78 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -61,6 +61,18 @@ if(RIPES_WITH_QPROCESS)
+     add_definitions(-DRIPES_WITH_QPROCESS)
+ endif()
+ 
++# The Optima compiler (a Python script, optc.py) which Ripes runs to turn
++# Optima programs into RISC-V assembly. Ripes looks for it at this location
++# unless another path is given in Edit->Settings->Compiler or through the
++# OPTIMA_COMPILER environment variable.
++set(OPTIMA_DIR "${CMAKE_SOURCE_DIR}/optima" CACHE PATH
++    "Directory containing the Optima compiler (optc.py)")
++if(NOT EXISTS "${OPTIMA_DIR}/optc.py")
++    message(STATUS "Optima compiler not found in ${OPTIMA_DIR}. Copy it there, "
++        "pass -DOPTIMA_DIR=<dir>, or set its path in the Ripes settings.")
++endif()
++add_compile_definitions(OPTIMA_DEFAULT_COMPILER="${OPTIMA_DIR}/optc.py")
++
+ # Find required Qt packages
+ find_package(Qt6 6.8 COMPONENTS Core Widgets Svg Charts REQUIRED)
+ 
+diff --git a/examples/examples.qrc b/examples/examples.qrc
+index 1a76a35..ff9dc57 100644
+--- a/examples/examples.qrc
++++ b/examples/examples.qrc
+@@ -12,5 +12,10 @@
+         <file>ELF/RanPi-RV32</file>
+         <file>ELF/RanPi-RV64</file>
+         <file>assembly/consoleReading.s</file>
++        <file>optima/quadratic.opt</file>
++        <file>optima/solvers.opt</file>
++        <file>optima/rosenbrock.opt</file>
++        <file>optima/maximize.opt</file>
++        <file>optima/functions.opt</file>
+     </qresource>
+ </RCC>
+diff --git a/examples/optima/functions.opt b/examples/optima/functions.opt
+new file mode 100644
+index 0000000..00d0f16
+--- /dev/null
++++ b/examples/optima/functions.opt
+@@ -0,0 +1,21 @@
++# Functions can use + - * / ^, sqrt exp log sin cos, earlier functions and
++# variables defined above them.
++scale = 2.5
++
++square(x) = x^2
++dist(x, y) = sqrt(square(x) + square(y))        # uses another function
++bump(x) = scale * exp(-square(x - 1)) + log(x^2 + 1) / 4
++
++print "dist(3, 4) =", dist(3, 4)
++print "bump(1) =", bump(1)
++print "d bump / dx at 0.5 =", gradient bump at 0.5
++
++# closest point to (3, 4) on a curved valley floor
++cost(x, y) = dist(x - 3, y - 4)^2 + (y - x^2)^2
++best = minimize cost from (1, 1) using newton
++print "best point:", best, "cost", cost(best), "found in", iterations, "iterations"
++
++# three unknowns work the same way
++h(a, b, c) = (a - 1)^2 + (b - 2)^2 + (c - 3)^2 + a * b * c / 10
++sol = minimize h from (0, 0, 0) using momentum(lr=0.05, beta=0.5)
++print "three variables:", sol
+diff --git a/examples/optima/maximize.opt b/examples/optima/maximize.opt
+new file mode 100644
+index 0000000..c34e5e1
+--- /dev/null
++++ b/examples/optima/maximize.opt
+@@ -0,0 +1,15 @@
++# maximize works like minimize, climbing instead of descending.
++height(x) = 5 - (x - 2)^2
++
++top = maximize height from 0 using gradient_descent(lr=0.2)
++print "highest point at x =", top[0], "height", height(top)
++
++# A function with built-ins: x * exp(-x) peaks at x = 1.
++g(x) = x * exp(-x)
++m = maximize g from 0.2 using newton
++print "x * exp(-x) peaks at", m, "value", g(m)
++
++# sin + cos has its first peak at pi/4
++w(t) = sin(t) + cos(t)
++peak = maximize w from 0 using gradient_descent(lr=0.5, tol=1e-5)
++print "sin + cos peaks at t =", peak[0], "(pi/4 = 0.785398)"
+diff --git a/examples/optima/quadratic.opt b/examples/optima/quadratic.opt
+new file mode 100644
+index 0000000..52dc620
+--- /dev/null
++++ b/examples/optima/quadratic.opt
+@@ -0,0 +1,12 @@
++# Find the minimum of a bowl-shaped function of two variables.
++target = 3
++
++f(x, y) = (x - target)^2 + (y + 1)^2
++
++r = minimize f from (0, 0) using gradient_descent(lr=0.1, steps=500, tol=1e-6)
++
++print "minimum at", r
++print "value there:", f(r)
++print "iterations used:", iterations
++print "gradient at (1, 2):", gradient f at (1, 2)
++print "x =", r[0], " y =", r[1]
+diff --git a/examples/optima/rosenbrock.opt b/examples/optima/rosenbrock.opt
+new file mode 100644
+index 0000000..9ba2b05
+--- /dev/null
++++ b/examples/optima/rosenbrock.opt
+@@ -0,0 +1,11 @@
++# The Rosenbrock "banana" function: a classic hard case for gradient descent.
++# Its minimum is at (1, 1). Newton's method uses the curvature and gets there
++# in a handful of steps.
++rosen(x, y) = (1 - x)^2 + 100 * (y - x^2)^2
++
++p = minimize rosen from (-1.2, 1) using newton(steps=50, tol=1e-5)
++print "newton:", p, "after", iterations, "iterations"
++print "rosen(p) =", rosen(p)
++
++q = minimize rosen from (-1.2, 1) using gradient_descent(lr=0.001, steps=300)
++print "gradient descent after", iterations, "steps is only at", q
+diff --git a/examples/optima/solvers.opt b/examples/optima/solvers.opt
+new file mode 100644
+index 0000000..09625e7
+--- /dev/null
++++ b/examples/optima/solvers.opt
+@@ -0,0 +1,14 @@
++# The same problem solved three ways. Compare how many iterations each needs.
++f(x, y) = (x - 1)^2 + 10 * (y - 2)^2 + x * y
++
++a = minimize f from (0, 0) using gradient_descent(lr=0.04, steps=2000)
++print "gradient descent:", a, "in", iterations, "iterations"
++
++b = minimize f from (0, 0) using momentum(lr=0.02, beta=0.8, steps=2000)
++print "momentum:        ", b, "in", iterations, "iterations"
++
++c = minimize f from (0, 0) using newton
++print "newton:          ", c, "in", iterations, "iterations"
++
++print "f at the minimum:", f(c)
++print "gradient there:  ", gradient f at c
+diff --git a/src/assembler/program.h b/src/assembler/program.h
+index f0e36ed..e946e13 100644
+--- a/src/assembler/program.h
++++ b/src/assembler/program.h
+@@ -24,7 +24,12 @@ enum SourceType {
+   /** Executable files not compiled from within ripes */
+   ExternalELF,
+   /** Executable files compiled within ripes */
+-  InternalELF
++  InternalELF,
++  /** Optima text: compiled to assembly by the Optima compiler (a Python
++   * script), which is then assembled like typed assembly. Kept last so that
++   * the values of the other types, which are stored in the settings, do not
++   * change. */
++  Optima
+ };
+ 
+ #define TEXT_SECTION_NAME ".text"
+diff --git a/src/cli/clioptions.cpp b/src/cli/clioptions.cpp
+index 69ba2ce..e1dba59 100644
+--- a/src/cli/clioptions.cpp
++++ b/src/cli/clioptions.cpp
+@@ -99,7 +99,8 @@ static bool parseCacheSpec(const QString &cacheName, const QJsonObject &obj,
+ void addCLIOptions(QCommandLineParser &parser, Ripes::CLIModeOptions &options) {
+   parser.addOption(QCommandLineOption("src", "Path to source file.", "path"));
+   parser.addOption(QCommandLineOption(
+-      "t", "Source file type. Options: [c, asm, bin, elf]", "type", "asm"));
++      "t", "Source file type. Options: [c, asm, bin, elf, optima]", "type",
++      "asm"));
+ 
+   // Processor models. Generate information from processor registry.
+   QStringList processorOptions;
+@@ -195,6 +196,8 @@ bool parseCLIOptions(QCommandLineParser &parser, QString &errorMessage,
+     options.srcType = SourceType::FlatBinary;
+   } else if (parser.value("t") == "elf") {
+     options.srcType = SourceType::ExternalELF;
++  } else if (parser.value("t") == "optima") {
++    options.srcType = SourceType::Optima;
+   } else {
+     errorMessage = "Invalid source type (--t)";
+     return false;
+diff --git a/src/cli/clirunner.cpp b/src/cli/clirunner.cpp
+index 4f0ae34..389dccb 100644
+--- a/src/cli/clirunner.cpp
++++ b/src/cli/clirunner.cpp
+@@ -4,6 +4,7 @@
+ #include "ccmanager.h"
+ #include "io/iomanager.h"
+ #include "loaddialog.h"
++#include "optimamanager.h"
+ #include "processorhandler.h"
+ #include "programutilities.h"
+ #include "syscall/systemio.h"
+@@ -198,6 +199,43 @@ int CLIRunner::processInput() {
+     ProcessorHandler::loadProgram(std::make_shared<Program>(p));
+     break;
+   }
++  case SourceType::Optima: {
++    // Compile the Optima file to assembly with the Optima compiler, then
++    // assemble the result.
++    info("Compiling Optima file '" + m_options.src + "'");
++    QFile file(m_options.src);
++    if (!file.open(QIODevice::ReadOnly)) {
++      error("Could not open file " + file.fileName());
++      return 1;
++    }
++    const QString source = QString::fromUtf8(file.readAll());
++    file.close();
++    const auto isa = ProcessorHandler::currentISA();
++    if (isa->isaID() != ISA::RV32I || !isa->extensionEnabled("M")) {
++      error("Optima programs need a 32-bit RISC-V processor with the M "
++            "extension (e.g. --proc RV32_SS --isaexts M)");
++      return 1;
++    }
++    const auto compiled = OptimaManager::compile(source);
++    if (!compiled.success) {
++      error(compiled.launchFailed
++                ? "Could not run the Optima compiler: " + compiled.errorMessage
++                : "Optima compilation failed:\n" + compiled.errorOutput);
++      return 1;
++    }
++    auto res = ProcessorHandler::getAssembler()->assembleRaw(
++        compiled.assembly, &IOManager::get().assemblerSymbols());
++    if (!res.errors.empty()) {
++      error("Error while assembling the generated assembly:");
++      for (auto &err : res.errors)
++        info(err.errorMessage(), true);
++      return 1;
++    }
++    auto program = std::make_shared<Program>(res.program);
++    OptimaManager::remapSource(*program, compiled.assembly, source);
++    ProcessorHandler::loadProgram(program);
++    break;
++  }
+   case SourceType::C: {
+     // For SourceType::C:
+     // - Compile the C file, disabling graphical components.
+diff --git a/src/editor/codeeditor.cpp b/src/editor/codeeditor.cpp
+index d44e252..8ca9bb0 100644
+--- a/src/editor/codeeditor.cpp
++++ b/src/editor/codeeditor.cpp
+@@ -17,6 +17,7 @@
+ 
+ #include "colors.h"
+ #include "csyntaxhighlighter.h"
++#include "optimasyntaxhighlighter.h"
+ #include "fonts.h"
+ #include "formattermanager.h"
+ #include "processorhandler.h"
+@@ -382,6 +383,10 @@ void CodeEditor::setSourceType(SourceType type,
+   case SourceType::C:
+     m_highlighter = std::make_unique<CSyntaxHighlighter>(document(), m_errors);
+     break;
++  case SourceType::Optima:
++    m_highlighter =
++        std::make_unique<OptimaSyntaxHighlighter>(document(), m_errors);
++    break;
+   default:
+     break;
+   }
+diff --git a/src/editor/optimasyntaxhighlighter.cpp b/src/editor/optimasyntaxhighlighter.cpp
+new file mode 100644
+index 0000000..621166b
+--- /dev/null
++++ b/src/editor/optimasyntaxhighlighter.cpp
+@@ -0,0 +1,76 @@
++#include "optimasyntaxhighlighter.h"
++
++#include <utility>
++
++#include "colors.h"
++
++namespace Ripes {
++
++OptimaSyntaxHighlighter::OptimaSyntaxHighlighter(QTextDocument *parent,
++                                                 std::shared_ptr<Errors> errors)
++    : SyntaxHighlighter(parent, std::move(errors)) {
++  const SyntaxColorScheme colors = currentSyntaxColors();
++  HighlightingRule rule;
++
++  // Function names: a word directly followed by '('
++  rule.format = QTextCharFormat();
++  rule.format.setForeground(colors.function);
++  rule.pattern = QRegularExpression(R"(\b[A-Za-z_][A-Za-z0-9_]*(?=\s*\())");
++  m_highlightingRules.append(rule);
++
++  // Numbers
++  rule.format = QTextCharFormat();
++  rule.format.setForeground(colors.immediate);
++  rule.pattern = QRegularExpression(
++      R"((?<![A-Za-z0-9_.])(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?(?![A-Za-z_]))");
++  m_highlightingRules.append(rule);
++
++  // Keywords
++  rule.format = QTextCharFormat();
++  rule.format.setForeground(colors.keyword);
++  rule.format.setFontWeight(QFont::Bold);
++  rule.pattern = QRegularExpression(
++      R"(\b(print|minimize|maximize|from|using|gradient|at|iterations)\b)");
++  m_highlightingRules.append(rule);
++
++  // Solvers and built-in functions
++  rule.format = QTextCharFormat();
++  rule.format.setForeground(colors.type);
++  rule.format.setFontWeight(QFont::Bold);
++  rule.pattern = QRegularExpression(
++      R"(\b(gradient_descent|momentum|newton|sqrt|exp|log|sin|cos)\b)");
++  m_highlightingRules.append(rule);
++
++  // Strings
++  rule.format = QTextCharFormat();
++  rule.format.setForeground(colors.string);
++  rule.pattern = QRegularExpression(R"("[^"]*")");
++  m_highlightingRules.append(rule);
++
++  m_commentFormat.setForeground(colors.comment);
++}
++
++void OptimaSyntaxHighlighter::syntaxHighlightBlock(const QString &text) {
++  for (const HighlightingRule &rule : std::as_const(m_highlightingRules)) {
++    QRegularExpressionMatchIterator matchIterator =
++        rule.pattern.globalMatch(text);
++    while (matchIterator.hasNext()) {
++      QRegularExpressionMatch match = matchIterator.next();
++      setFormat(match.capturedStart(), match.capturedLength(), rule.format);
++    }
++  }
++
++  // A comment runs from the first '#' outside a string to the end of the
++  // line, and wins over everything else.
++  bool inString = false;
++  for (int i = 0; i < text.length(); ++i) {
++    if (text[i] == '"') {
++      inString = !inString;
++    } else if (text[i] == '#' && !inString) {
++      setFormat(i, text.length() - i, m_commentFormat);
++      break;
++    }
++  }
++}
++
++} // namespace Ripes
+diff --git a/src/editor/optimasyntaxhighlighter.h b/src/editor/optimasyntaxhighlighter.h
+new file mode 100644
+index 0000000..be60975
+--- /dev/null
++++ b/src/editor/optimasyntaxhighlighter.h
+@@ -0,0 +1,25 @@
++#pragma once
++
++#include <QRegularExpression>
++
++#include "syntaxhighlighter.h"
++
++namespace Ripes {
++
++/// Syntax highlighting for the Optima optimization language.
++class OptimaSyntaxHighlighter : public SyntaxHighlighter {
++public:
++  OptimaSyntaxHighlighter(QTextDocument *parent = nullptr,
++                          std::shared_ptr<Errors> errors = {});
++  void syntaxHighlightBlock(const QString &text) override;
++
++private:
++  struct HighlightingRule {
++    QRegularExpression pattern;
++    QTextCharFormat format;
++  };
++  QVector<HighlightingRule> m_highlightingRules;
++  QTextCharFormat m_commentFormat;
++};
++
++} // namespace Ripes
+diff --git a/src/edittab.cpp b/src/edittab.cpp
+index 74057a8..78676ca 100644
+--- a/src/edittab.cpp
++++ b/src/edittab.cpp
+@@ -2,10 +2,15 @@
+ #include "ui_edittab.h"
+ 
+ #include <QCheckBox>
++#include <QDialog>
++#include <QDialogButtonBox>
++#include <QFileDialog>
+ #include <QLabel>
+ #include <QLineEdit>
+ #include <QMessageBox>
++#include <QPlainTextEdit>
+ #include <QPushButton>
++#include <QVBoxLayout>
+ 
+ #include "assembler/program.h"
+ 
+@@ -13,7 +18,10 @@
+ #include "cli/programutilities.h"
+ #include "compilererrordialog.h"
+ #include "editor/codeeditor.h"
++#include "editor/rvsyntaxhighlighter.h"
++#include "fonts.h"
+ #include "io/iomanager.h"
++#include "optimamanager.h"
+ #include "processorhandler.h"
+ #include "ripessettings.h"
+ #include "symbolnavigator.h"
+@@ -25,6 +33,11 @@ EditTab::EditTab(QToolBar *toolbar, QWidget *parent)
+     : RipesTab(toolbar, parent), m_ui(new Ui::EditTab) {
+   m_ui->setupUi(this);
+ 
++  // Read the input type of the previous session now: setting up the editor
++  // below stores the default (assembly) input type in the settings.
++  const int savedInputType =
++      RipesSettings::value(RIPES_SETTING_INPUT_TYPE).toInt();
++
+   m_sourceErrors = std::make_shared<Errors>();
+   m_ui->codeEditor->setErrors(m_sourceErrors);
+ 
+@@ -86,6 +99,22 @@ EditTab::EditTab(QToolBar *toolbar, QWidget *parent)
+           &EditTab::sourceTypeChanged);
+   connect(m_ui->setCInput, &QRadioButton::toggled, m_buildAction,
+           &QAction::setEnabled);
++  connect(m_ui->setOptimaInput, &QRadioButton::toggled, this,
++          &EditTab::sourceTypeChanged);
++
++  // A button for inspecting the assembly which the Optima compiler generated.
++  // Only shown while Optima is the selected input type.
++  m_optimaAssemblyButton = new QPushButton("Generated assembly...", this);
++  m_optimaAssemblyButton->setToolTip(
++      "Show the RISC-V assembly generated from the Optima program");
++  m_optimaAssemblyButton->setVisible(false);
++  m_ui->sourceTypeLayout->addWidget(m_optimaAssemblyButton);
++  connect(m_optimaAssemblyButton, &QPushButton::clicked, this,
++          &EditTab::showOptimaAssembly);
++  connect(m_ui->setOptimaInput, &QRadioButton::toggled, m_optimaAssemblyButton,
++          &QWidget::setVisible);
++  // The Optima compiler is an external process; not available on WASM.
++  disableIfWasm(m_ui->setOptimaInput);
+   // C compiler is not yet supported on WASM.
+   disableIfWasm(m_ui->setCInput);
+ 
+@@ -93,7 +122,8 @@ EditTab::EditTab(QToolBar *toolbar, QWidget *parent)
+   // the compiler is invalid
+   connect(&CCManager::get(), &CCManager::ccChanged, this,
+           [this](const auto &res) {
+-            if (!res.success) {
++            // (Only C input depends on the C compiler; leave Optima alone.)
++            if (!res.success && m_ui->setCInput->isChecked()) {
+               m_ui->setAssemblyInput->setChecked(true);
+             }
+           });
+@@ -126,7 +156,7 @@ EditTab::EditTab(QToolBar *toolbar, QWidget *parent)
+   m_ui->editorSplitter->setStretchFactor(0, 2);
+   m_ui->editorSplitter->setStretchFactor(1, 2);
+ 
+-  switch (RipesSettings::value(RIPES_SETTING_INPUT_TYPE).toInt()) {
++  switch (savedInputType) {
+   case SourceType::Assembly: {
+     m_ui->setAssemblyInput->toggle();
+     break;
+@@ -135,6 +165,10 @@ EditTab::EditTab(QToolBar *toolbar, QWidget *parent)
+     m_ui->setCInput->toggle();
+     break;
+   }
++  case SourceType::Optima: {
++    m_ui->setOptimaInput->toggle();
++    break;
++  }
+   default:
+     break;
+   }
+@@ -161,6 +195,14 @@ bool EditTab::loadExternalFile(const LoadFileParams &params) {
+     if (m_currentSourceType == SourceType::C) {
+       return loadFile(params);
+     }
++  } else if (params.type == SourceType::Optima) {
++    // As for C: only load the file if the Optima compiler is available (the
++    // user is told what is missing otherwise).
++    enableEditor();
++    m_ui->setOptimaInput->setChecked(true);
++    if (m_currentSourceType == SourceType::Optima) {
++      return loadFile(params);
++    }
+   } else if (params.type == SourceType::Assembly) {
+     m_ui->setAssemblyInput->setChecked(true);
+     return loadFile(params);
+@@ -183,6 +225,7 @@ bool EditTab::loadFile(const LoadFileParams &fileParams) {
+   auto loadedProgram = std::make_shared<Program>();
+   switch (fileParams.type) {
+   case SourceType::C:
++  case SourceType::Optima:
+   case SourceType::Assembly: {
+     success &= loadSourceFile(*loadedProgram, file);
+     break;
+@@ -253,6 +296,7 @@ void EditTab::sourceTypeChanged() {
+ 
+   // Clear any errors (ie. when assembler had errors, and now switching to C)
+   *m_sourceErrors = {};
++  const SourceType previousSourceType = m_currentSourceType;
+ 
+   // Validate source type selection
+   if (m_ui->setAssemblyInput->isChecked()) {
+@@ -268,6 +312,20 @@ void EditTab::sourceTypeChanged() {
+       return;
+     }
+     m_currentSourceType = SourceType::C;
++  } else if (m_ui->setOptimaInput->isChecked()) {
++    // Ensure that the Optima compiler can be run
++    QString reason;
++    if (!OptimaManager::isAvailable(&reason)) {
++      QMessageBox::warning(
++          this, "Error",
++          "The Optima compiler is not available.\n\n" + reason +
++              "\n\nSet the Python interpreter and the path to optc.py "
++              "under:\n Edit->Settings->Compiler");
++      // Re-enable assembly input
++      m_ui->setAssemblyInput->setChecked(true);
++      return;
++    }
++    m_currentSourceType = SourceType::Optima;
+   }
+ 
+   // Notify the source type change to the code editor
+@@ -276,6 +334,13 @@ void EditTab::sourceTypeChanged() {
+ 
+   // And store in settings
+   RipesSettings::setValue(RIPES_SETTING_INPUT_TYPE, m_currentSourceType);
++
++  // The editor contents are now to be read as a different language; rebuild
++  // when switching to or from Optima (which is compiled as you type).
++  if (previousSourceType != m_currentSourceType &&
++      (previousSourceType == SourceType::Optima ||
++       m_currentSourceType == SourceType::Optima))
++    sourceCodeChanged();
+ }
+ 
+ void EditTab::onProcessorChanged() {
+@@ -296,6 +361,9 @@ void EditTab::sourceCodeChanged() {
+   case SourceType::Assembly:
+     assemble(source);
+     break;
++  case SourceType::Optima:
++    compileOptima(source);
++    break;
+   default:
+     // Do nothing, either some external program is loaded or, if compiling from
+     // C, the user shall manually select to build
+@@ -321,6 +389,101 @@ void EditTab::assemble(const QString &source) {
+   m_ui->codeEditor->rehighlight();
+ }
+ 
++void EditTab::compileOptima(const QString &source) {
++  *m_sourceErrors = {};
++  m_optimaAssembly.clear();
++
++  // Reports an error on a line of the Optima source (shown like an assembler
++  // error: the line is underlined and the message is its tooltip).
++  auto fail = [this](int line, const QString &message) {
++    m_sourceErrors->push_back(Error(Location(line < 0 ? 0 : line), message));
++    m_ui->codeEditor->rehighlight();
++  };
++
++  // The generated code is 32-bit and uses multiply/divide instructions.
++  const auto isa = ProcessorHandler::currentISA();
++  if (isa->isaID() != ISA::RV32I || !isa->extensionEnabled("M")) {
++    fail(0, "Optima programs need a 32-bit RISC-V processor with the M "
++            "extension enabled. Pick one with 'Select processor'.");
++    return;
++  }
++
++  const auto res = OptimaManager::compile(source);
++  if (!res.success) {
++    fail(res.errorLine, res.launchFailed
++                            ? "Could not run the Optima compiler: " +
++                                  res.errorMessage
++                            : res.errorMessage);
++    return;
++  }
++
++  // Assemble the generated assembly as if it had been typed into the editor.
++  auto asmRes = ProcessorHandler::getAssembler()->assembleRaw(
++      res.assembly, &IOManager::get().assemblerSymbols());
++  m_optimaAssembly = res.assembly;
++  if (!asmRes.errors.empty()) {
++    const auto &first = asmRes.errors.front();
++    fail(0, "The assembly generated by the Optima compiler did not assemble "
++            "(assembly line " +
++                QString::number(first.sourceLine() + 1) +
++                ": " + first.errorMessage() +
++                "). See 'Generated assembly...'.");
++    return;
++  }
++
++  auto program = std::make_shared<Program>(asmRes.program);
++  // Make the program refer to lines of the Optima source instead of lines of
++  // the generated assembly, so that the editor can highlight the statement
++  // being executed.
++  OptimaManager::remapSource(*program, res.assembly, source);
++  ProcessorHandler::loadProgram(program);
++  m_ui->codeEditor->rehighlight();
++}
++
++void EditTab::showOptimaAssembly() {
++  QDialog dialog(this);
++  dialog.setWindowTitle("Assembly generated from the Optima program");
++  dialog.resize(760, 640);
++  auto *layout = new QVBoxLayout(&dialog);
++
++  auto *view = new QPlainTextEdit(&dialog);
++  view->setReadOnly(true);
++  view->setWordWrapMode(QTextOption::NoWrap);
++  view->setFont(QFont(Fonts::monospace, 11));
++  if (m_optimaAssembly.isEmpty()) {
++    view->setPlainText(
++        "# Nothing to show: the Optima program has not compiled successfully "
++        "yet.");
++  } else {
++    view->setPlainText(m_optimaAssembly);
++    // Parented to the document, which deletes it together with the dialog.
++    new RVSyntaxHighlighter(view->document(), std::make_shared<Errors>(),
++                            ProcessorHandler::getAssembler()->getOpcodes());
++  }
++  layout->addWidget(view);
++
++  auto *buttons = new QDialogButtonBox(
++      QDialogButtonBox::Save | QDialogButtonBox::Close, &dialog);
++  buttons->button(QDialogButtonBox::Save)
++      ->setEnabled(!m_optimaAssembly.isEmpty());
++  layout->addWidget(buttons);
++  connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
++  connect(buttons, &QDialogButtonBox::accepted, &dialog, [this, &dialog] {
++    const QString path = QFileDialog::getSaveFileName(
++        &dialog, "Save generated assembly", QString(),
++        "Assembly files (*.s);; All files (*.*)");
++    if (path.isEmpty())
++      return;
++    QFile file(path);
++    if (!file.open(QIODevice::WriteOnly | QIODevice::Text) ||
++        file.write(m_optimaAssembly.toUtf8()) < 0) {
++      QMessageBox::warning(&dialog, "File error",
++                           "Error when saving file: " + file.errorString());
++    }
++  });
++  dialog.exec();
++}
++
+ void EditTab::compile() {
+   // We don't care about asking our editor for syntax accepted, since there is
+   // no C-syntax checking in Ripes.
+diff --git a/src/edittab.h b/src/edittab.h
+index 4d60580..1c3b536 100644
+--- a/src/edittab.h
++++ b/src/edittab.h
+@@ -2,6 +2,7 @@
+ 
+ #include <QByteArray>
+ #include <QFile>
++#include <QPushButton>
+ #include <QWidget>
+ #include <map>
+ #include <memory>
+@@ -76,6 +77,12 @@ private:
+   // assembled program.
+   void assemble(const QString &sourceText);
+   void compile();
++  // Compiles the provided Optima source text to assembly using the Optima
++  // compiler, assembles the result and updates the ProcessorHandler with the
++  // assembled program.
++  void compileOptima(const QString &sourceText);
++  // Shows the assembly most recently generated from the Optima source.
++  void showOptimaAssembly();
+ 
+   void updateProgramViewer();
+   bool loadSourceFile(Program &program, QFile &file);
+@@ -93,6 +100,10 @@ private:
+ 
+   SourceType m_currentSourceType = SourceType::Assembly;
+ 
++  // The assembly generated by the most recent successful Optima compilation.
++  QString m_optimaAssembly;
++  QPushButton *m_optimaAssemblyButton = nullptr;
++
+   bool m_editorEnabled = true;
+ };
+ } // namespace Ripes
+diff --git a/src/edittab.ui b/src/edittab.ui
+index 9e08c75..6c1acfc 100644
+--- a/src/edittab.ui
++++ b/src/edittab.ui
+@@ -78,6 +78,16 @@
+                 </property>
+                </widget>
+               </item>
++              <item>
++               <widget class="QRadioButton" name="setOptimaInput">
++                <property name="toolTip">
++                 <string>Optima optimization language. The program is compiled to RISC-V assembly by the Optima compiler (a Python script) as you type.</string>
++                </property>
++                <property name="text">
++                 <string>Optima</string>
++                </property>
++               </widget>
++              </item>
+               <item>
+                <layout class="QHBoxLayout" name="sourceTypeLayout"/>
+               </item>
+diff --git a/src/loaddialog.cpp b/src/loaddialog.cpp
+index 6466800..abd3eeb 100644
+--- a/src/loaddialog.cpp
++++ b/src/loaddialog.cpp
+@@ -99,8 +99,8 @@ void LoadDialog::openFileButtonTriggered() {
+   switch (m_currentType) {
+   case TypeButtonID::Source: {
+     title = "Open source file";
+-    filter = "Source files [*.s, *.as, *.asm, *.c] (*.s *.as *.asm *.c);; All "
+-             "files (*.*)";
++    filter = "Source files [*.s, *.as, *.asm, *.c, *.opt] (*.s *.as *.asm *.c "
++             "*.opt);; All files (*.*)";
+     break;
+   }
+   case TypeButtonID::Flatbinary: {
+@@ -260,8 +260,12 @@ void LoadDialog::accept() {
+   switch (m_currentType) {
+   case TypeButtonID::Source:
+     // Set source type based on file extension
+-    m_params.type =
+-        m_params.filepath.endsWith(".c") ? SourceType::C : SourceType::Assembly;
++    if (m_params.filepath.endsWith(".c"))
++      m_params.type = SourceType::C;
++    else if (m_params.filepath.endsWith(".opt"))
++      m_params.type = SourceType::Optima;
++    else
++      m_params.type = SourceType::Assembly;
+     break;
+   case TypeButtonID::Flatbinary:
+     m_params.type = SourceType::FlatBinary;
+diff --git a/src/mainwindow.cpp b/src/mainwindow.cpp
+index 67dde3f..92948a5 100644
+--- a/src/mainwindow.cpp
++++ b/src/mainwindow.cpp
+@@ -320,6 +320,21 @@ void MainWindow::setupExamplesMenu(QMenu *parent) {
+     }
+   }
+ 
++  const auto optimaExamples = QDir(":/examples/optima/").entryList(QDir::Files);
++  if (!optimaExamples.isEmpty()) {
++    auto *optimaMenu = parent->addMenu("Optima");
++    for (const auto &fileName : optimaExamples) {
++      optimaMenu->addAction(fileName, this, [this, fileName] {
++        LoadFileParams parms;
++        parms.filepath = QString(":/examples/optima/") + fileName;
++        parms.type = SourceType::Optima;
++        static_cast<EditTab *>(m_tabWidgets.at(EditTabID).tab)
++            ->loadExternalFile(parms);
++        clearSaveFile();
++      });
++    }
++  }
++
+   const auto ELFExamples = QDir(":/examples/ELF/").entryList(QDir::Files);
+   auto *elfMenu = parent->addMenu("ELF (precompiled C)");
+   if (!ELFExamples.isEmpty()) {
+diff --git a/src/optimamanager.cpp b/src/optimamanager.cpp
+new file mode 100644
+index 0000000..231fe2b
+--- /dev/null
++++ b/src/optimamanager.cpp
+@@ -0,0 +1,222 @@
++#include "optimamanager.h"
++
++#include <QCoreApplication>
++#include <QDir>
++#include <QFileInfo>
++#include <QRegularExpression>
++#include <QStringList>
++
++#ifdef RIPES_WITH_QPROCESS
++#include <QProcess>
++#endif
++
++#include "ripessettings.h"
++
++namespace Ripes {
++
++#ifdef RIPES_WITH_QPROCESS
++
++// Returns true if 'path' starts and identifies itself as Python 3.
++static bool isPython3(const QString &path) {
++  QProcess process;
++  process.start(path, {"--version"});
++  if (!process.waitForStarted(3000))
++    return false;
++  if (!process.waitForFinished(5000)) {
++    process.kill();
++    process.waitForFinished(1000);
++    return false;
++  }
++  if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0)
++    return false;
++  const QString output = QString::fromLocal8Bit(
++      process.readAllStandardOutput() + process.readAllStandardError());
++  return output.trimmed().startsWith("Python 3");
++}
++
++QString OptimaManager::pythonPath() {
++  const QString setting =
++      RipesSettings::value(RIPES_SETTING_OPTIMA_PYTHON).toString().trimmed();
++  if (!setting.isEmpty())
++    return setting;
++
++  // Autodetect once; an interpreter does not appear or vanish while running.
++  static bool s_searched = false;
++  static QString s_detected;
++  if (!s_searched) {
++    s_searched = true;
++#ifdef Q_OS_WIN
++    const QStringList candidates = {"python", "py", "python3"};
++#else
++    const QStringList candidates = {"python3", "python"};
++#endif
++    for (const auto &candidate : candidates) {
++      if (isPython3(candidate)) {
++        s_detected = candidate;
++        break;
++      }
++    }
++  }
++  return s_detected;
++}
++
++#else // RIPES_WITH_QPROCESS
++
++QString OptimaManager::pythonPath() { return QString(); }
++
++#endif // RIPES_WITH_QPROCESS
++
++QString OptimaManager::compilerPath() {
++  const QString setting =
++      RipesSettings::value(RIPES_SETTING_OPTIMA_COMPILER).toString().trimmed();
++  if (!setting.isEmpty())
++    return QFileInfo(setting).isFile() ? setting : QString();
++
++  const QString env = qEnvironmentVariable("OPTIMA_COMPILER").trimmed();
++  if (!env.isEmpty() && QFileInfo(env).isFile())
++    return env;
++
++#ifdef OPTIMA_DEFAULT_COMPILER
++  // The location given when Ripes was built (by default <source>/optima).
++  if (QFileInfo(OPTIMA_DEFAULT_COMPILER).isFile())
++    return OPTIMA_DEFAULT_COMPILER;
++#endif
++
++  const QDir appDir(QCoreApplication::applicationDirPath());
++  const QStringList candidates = {
++      "optima/optc.py",
++      "../optima/optc.py",
++      "../../optima/optc.py",
++      "../../../optima/optc.py",
++      "../Resources/optima/optc.py",  // macOS bundle
++      "../share/ripes/optima/optc.py" // installed
++  };
++  for (const auto &candidate : candidates) {
++    const QFileInfo info(appDir.absoluteFilePath(candidate));
++    if (info.isFile())
++      return info.canonicalFilePath();
++  }
++  return QString();
++}
++
++bool OptimaManager::isAvailable(QString *reason) {
++#ifndef RIPES_WITH_QPROCESS
++  if (reason)
++    *reason = "This build of Ripes cannot start external programs.";
++  return false;
++#else
++  if (compilerPath().isEmpty()) {
++    if (reason) {
++      const QString setting =
++          RipesSettings::value(RIPES_SETTING_OPTIMA_COMPILER).toString();
++      *reason = setting.trimmed().isEmpty()
++                    ? QString("The Optima compiler script (optc.py) was not "
++                              "found.")
++                    : "The Optima compiler script '" + setting +
++                          "' does not exist.";
++    }
++    return false;
++  }
++  if (pythonPath().isEmpty()) {
++    if (reason)
++      *reason = "No Python 3 interpreter was found in PATH.";
++    return false;
++  }
++  return true;
++#endif
++}
++
++OptimaManager::Result OptimaManager::compile(const QString &source) {
++  Result result;
++  QString reason;
++  if (!isAvailable(&reason)) {
++    result.launchFailed = true;
++    result.errorMessage = reason;
++    return result;
++  }
++
++#ifdef RIPES_WITH_QPROCESS
++  // The source is sent on stdin and the assembly comes back on stdout, so no
++  // temporary files are needed:  python optc.py - -o -
++  const QString python = pythonPath();
++  QProcess process;
++  process.start(python, {compilerPath(), "-", "-o", "-"});
++  if (!process.waitForStarted(5000)) {
++    result.launchFailed = true;
++    result.errorMessage =
++        "Could not start '" + python + "': " + process.errorString();
++    return result;
++  }
++  process.write(source.toUtf8());
++  process.closeWriteChannel();
++  if (!process.waitForFinished(30000)) {
++    process.kill();
++    process.waitForFinished(1000);
++    result.launchFailed = true;
++    result.errorMessage = "The Optima compiler did not finish in time.";
++    return result;
++  }
++
++  const QString out = QString::fromUtf8(process.readAllStandardOutput());
++  result.errorOutput =
++      QString::fromUtf8(process.readAllStandardError()).trimmed();
++
++  if (process.exitStatus() == QProcess::NormalExit &&
++      process.exitCode() == 0) {
++    result.success = true;
++    result.assembly = out;
++    return result;
++  }
++
++  // Compile errors look like:  <stdin>:LINE:COLUMN: error: MESSAGE
++  static const QRegularExpression errorPattern(
++      R"(^[^\n]*?:(\d+):(\d+): error: ([^\n]*))",
++      QRegularExpression::MultilineOption);
++  const auto match = errorPattern.match(result.errorOutput);
++  if (match.hasMatch()) {
++    result.errorLine = match.captured(1).toInt() - 1;
++    result.errorMessage = match.captured(3) + " (column " +
++                          match.captured(2) + ")";
++  } else {
++    // Not a source error: the script itself failed (wrong path, a Python
++    // version that is too old, ...).
++    result.launchFailed = true;
++    result.errorMessage = result.errorOutput.isEmpty()
++                              ? QString("The Optima compiler failed.")
++                              : result.errorOutput;
++  }
++#endif
++  return result;
++}
++
++void OptimaManager::remapSource(Program &program, const QString &assembly,
++                                const QString &optimaSource) {
++  // For each line of the generated assembly, find the Optima line it came
++  // from (-1: none, e.g. the run-time library). "# ---- line N:" starts the
++  // code of source line N; any other "# ---- " comment ends it.
++  static const QRegularExpression lineMarker(R"(^\s*# ---- line (\d+):)");
++  static const QRegularExpression otherMarker(R"(^\s*# ---- )");
++  const QStringList asmLines = assembly.split('\n');
++  std::vector<int> origin(asmLines.size(), -1);
++  int current = -1;
++  for (qsizetype i = 0; i < asmLines.size(); ++i) {
++    const auto match = lineMarker.match(asmLines[i]);
++    if (match.hasMatch())
++      current = match.captured(1).toInt() - 1;
++    else if (otherMarker.match(asmLines[i]).hasMatch())
++      current = -1;
++    origin[i] = current;
++  }
++
++  Program::SourceMapping remapped;
++  for (const auto &entry : program.sourceMapping) {
++    for (const auto asmLine : entry.second) {
++      if (asmLine < origin.size() && origin[asmLine] >= 0)
++        remapped[entry.first].insert(origin[asmLine]);
++    }
++  }
++  program.sourceMapping = remapped;
++  program.sourceHash = Program::calculateHash(optimaSource.toUtf8());
++}
++
++} // namespace Ripes
+diff --git a/src/optimamanager.h b/src/optimamanager.h
+new file mode 100644
+index 0000000..c36ed73
+--- /dev/null
++++ b/src/optimamanager.h
+@@ -0,0 +1,70 @@
++#pragma once
++
++#include <QString>
++
++#include "assembler/program.h"
++
++namespace Ripes {
++
++/**
++ * @brief The OptimaManager class
++ * Runs the Optima compiler (a Python script, optc.py) on a piece of Optima
++ * source code and returns the RISC-V assembly it generates. Ripes then
++ * assembles that text with its own assembler, exactly as if it had been typed
++ * into the editor.
++ *
++ * The compiler script is looked up in this order:
++ *   1. the "Optima compiler script" setting (Edit->Settings->Compiler)
++ *   2. the OPTIMA_COMPILER environment variable
++ *   3. the location given when Ripes was built (CMake option OPTIMA_DIR, by
++ *      default the "optima" directory in the Ripes source tree)
++ *   4. an "optima" directory next to (or up to three levels above) the Ripes
++ *      executable.
++ * The Python interpreter is the "Python interpreter" setting, or else the
++ * first of python3/python/py found in PATH that reports version 3.
++ */
++class OptimaManager {
++public:
++  struct Result {
++    /// True if assembly was generated.
++    bool success = false;
++    /// True if the compiler could not be run at all (as opposed to the
++    /// compiler reporting an error in the source code).
++    bool launchFailed = false;
++    /// The generated assembly program (if success).
++    QString assembly;
++    /// Zero-based source line of a compile error, or -1 if unknown.
++    int errorLine = -1;
++    /// Short error message (the compiler's own message, or why it could not
++    /// be run).
++    QString errorMessage;
++    /// Everything the compiler wrote to stderr.
++    QString errorOutput;
++  };
++
++  /// Compiles @p source. Never throws; inspect Result::success.
++  static Result compile(const QString &source);
++
++  /// Returns true if both a Python interpreter and the compiler script were
++  /// found. If not, @p reason (if non-null) describes what is missing.
++  static bool isAvailable(QString *reason = nullptr);
++
++  /// Resolved path of the compiler script, or an empty string if not found.
++  static QString compilerPath();
++  /// Resolved Python interpreter, or an empty string if not found.
++  static QString pythonPath();
++
++  /**
++   * @brief remapSource
++   * A program assembled from generated assembly has source mappings which
++   * refer to lines of that assembly. This function rewrites them to refer to
++   * lines of the Optima source instead, using the "# ---- line N:" comments
++   * that the compiler emits, and stamps the program with the hash of the
++   * Optima source. The editor can then highlight the Optima statement which
++   * each processor stage is currently executing.
++   */
++  static void remapSource(Program &program, const QString &assembly,
++                          const QString &optimaSource);
++};
++
++} // namespace Ripes
+diff --git a/src/ripessettings.cpp b/src/ripessettings.cpp
+index ea073aa..63aea93 100644
+--- a/src/ripessettings.cpp
++++ b/src/ripessettings.cpp
+@@ -23,6 +23,9 @@ const std::map<QString, QVariant> s_defaultSettings = {
+     {RIPES_SETTING_LDARGS,
+      "-static -lm"}, // Ensure statically linked executable + link with math
+                      // library
++    // Empty: autodetect the interpreter / look for the script next to Ripes.
++    {RIPES_SETTING_OPTIMA_PYTHON, ""},
++    {RIPES_SETTING_OPTIMA_COMPILER, ""},
+     {RIPES_SETTING_CONSOLEECHO, "true"},
+     {RIPES_SETTING_INDENTAMT, 4},
+     {RIPES_SETTING_UIUPDATEPS, 25},
+diff --git a/src/ripessettings.h b/src/ripessettings.h
+index 9c198b2..b8cb74d 100644
+--- a/src/ripessettings.h
++++ b/src/ripessettings.h
+@@ -17,6 +17,8 @@ namespace Ripes {
+ #define RIPES_SETTING_FORMAT_ON_SAVE ("format_on_save")
+ #define RIPES_SETTING_FORMATTER_ARGS ("formatter_args")
+ #define RIPES_SETTING_LDARGS ("linker_args")
++#define RIPES_SETTING_OPTIMA_PYTHON ("optima_python")
++#define RIPES_SETTING_OPTIMA_COMPILER ("optima_compiler")
+ #define RIPES_SETTING_CONSOLEECHO ("console_echo")
+ #define RIPES_SETTING_INDENTAMT ("editor_indent")
+ #define RIPES_SETTING_UIUPDATEPS ("ui_update_ps")
+diff --git a/src/savedialog.cpp b/src/savedialog.cpp
+index eb945d9..7622442 100644
+--- a/src/savedialog.cpp
++++ b/src/savedialog.cpp
+@@ -57,9 +57,9 @@ void SaveDialog::pathChanged() {
+   QStringList filesToSave;
+   const QString &path = m_ui->filePath->text();
+   if (m_ui->saveSource->isChecked() && !path.isEmpty() &&
+-      (sourceType == SourceType::Assembly || sourceType == SourceType::C)) {
+-    const auto fileExtension =
+-        (sourceType == SourceType::Assembly) ? ".s" : ".c";
++      (sourceType == SourceType::Assembly || sourceType == SourceType::C ||
++       sourceType == SourceType::Optima)) {
++    const auto fileExtension = sourceExtension();
+ 
+     filesToSave << (m_ui->filePath->text().endsWith(fileExtension)
+                         ? m_ui->filePath->text()
+diff --git a/src/savedialog.h b/src/savedialog.h
+index 6f8a495..24f962c 100644
+--- a/src/savedialog.h
++++ b/src/savedialog.h
+@@ -22,7 +22,7 @@ public:
+   }
+   QString sourcePath() {
+     return RipesSettings::value(RIPES_SETTING_SAVE_SOURCE).toBool()
+-               ? getPath() + (sourceType == SourceType::C ? ".c" : ".s")
++               ? getPath() + sourceExtension()
+                : QString();
+   }
+   QString binaryPath() {
+@@ -33,6 +33,18 @@ public:
+ 
+   void accept() override;
+ 
++  /// File extension used when saving the editor contents.
++  QString sourceExtension() const {
++    switch (sourceType) {
++    case SourceType::C:
++      return ".c";
++    case SourceType::Optima:
++      return ".opt";
++    default:
++      return ".s";
++    }
++  }
++
+ private:
+   void openFileButtonTriggered();
+   void pathChanged();
+diff --git a/src/settingsdialog.cpp b/src/settingsdialog.cpp
+index a858bad..9ce6dc1 100644
+--- a/src/settingsdialog.cpp
++++ b/src/settingsdialog.cpp
+@@ -258,6 +258,49 @@ QWidget *SettingsDialog::createCompilerPage() {
+ 
+   pageLayout->addWidget(CCGroupBox);
+ 
++  /***********************************************************************
++   * Optima compiler settings
++   **********************************************************************/
++  auto *optimaGroupBox = new QGroupBox("Optima compiler");
++  auto *optimaLayout = new QVBoxLayout();
++  optimaGroupBox->setLayout(optimaLayout);
++  auto *optimaDesc = new QLabel(
++      "Optima programs are compiled to RISC-V assembly by a Python script "
++      "(optc.py). Leave the fields empty to autodetect: Ripes looks for "
++      "Python 3 in PATH and for an 'optima' folder next to its executable.");
++  optimaDesc->setWordWrap(true);
++  optimaLayout->addWidget(optimaDesc);
++
++  auto *optimaPythonLayout = new QHBoxLayout();
++  auto [optimaPythonLabel, optimaPython] = createSettingsWidgets<QLineEdit>(
++      RIPES_SETTING_OPTIMA_PYTHON, "Python interpreter:");
++  optimaPython->setPlaceholderText("autodetect (python3, python)");
++  optimaPythonLayout->addWidget(optimaPythonLabel);
++  optimaPythonLayout->addWidget(optimaPython);
++  optimaLayout->addLayout(optimaPythonLayout);
++
++  auto *optimaScriptLayout = new QHBoxLayout();
++  auto [optimaScriptLabel, optimaScript] = createSettingsWidgets<QLineEdit>(
++      RIPES_SETTING_OPTIMA_COMPILER, "Compiler script (optc.py):");
++  optimaScript->setPlaceholderText("autodetect (optima/optc.py)");
++  optimaScriptLayout->addWidget(optimaScriptLabel);
++  optimaScriptLayout->addWidget(optimaScript);
++  auto *optimaBrowseButton = new QPushButton("Browse");
++  connect(optimaBrowseButton, &QPushButton::clicked, this,
++          [this, optimaScript = optimaScript] {
++            QFileDialog dialog(this);
++            dialog.setOption(QFileDialog::DontUseNativeDialog);
++            dialog.setAcceptMode(QFileDialog::AcceptOpen);
++            dialog.setNameFilter("Optima compiler (optc.py);; All files (*)");
++            if (dialog.exec()) {
++              optimaScript->setText(dialog.selectedFiles().at(0));
++            }
++          });
++  optimaScriptLayout->addWidget(optimaBrowseButton);
++  optimaLayout->addLayout(optimaScriptLayout);
++
++  pageLayout->addWidget(optimaGroupBox);
++
+   // Trigger initial rehighlighting
+   CCManager::get().trySetCC(m_ccpath->text());
+ 

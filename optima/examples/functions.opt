@@ -1,0 +1,21 @@
+# Functions can use + - * / ^, sqrt exp log sin cos, earlier functions and
+# variables defined above them.
+scale = 2.5
+
+square(x) = x^2
+dist(x, y) = sqrt(square(x) + square(y))        # uses another function
+bump(x) = scale * exp(-square(x - 1)) + log(x^2 + 1) / 4
+
+print "dist(3, 4) =", dist(3, 4)
+print "bump(1) =", bump(1)
+print "d bump / dx at 0.5 =", gradient bump at 0.5
+
+# closest point to (3, 4) on a curved valley floor
+cost(x, y) = dist(x - 3, y - 4)^2 + (y - x^2)^2
+best = minimize cost from (1, 1) using newton
+print "best point:", best, "cost", cost(best), "found in", iterations, "iterations"
+
+# three unknowns work the same way
+h(a, b, c) = (a - 1)^2 + (b - 2)^2 + (c - 3)^2 + a * b * c / 10
+sol = minimize h from (0, 0, 0) using momentum(lr=0.05, beta=0.5)
+print "three variables:", sol
