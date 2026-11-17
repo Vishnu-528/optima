@@ -1,0 +1,152 @@
+# Builds Ripes with the Optima patch for Windows and packages it together
+# with the Optima compiler.
+#
+# Run it from the repository's Actions tab: "Build patched Ripes (Windows)"
+# -> "Run workflow". When it finishes, download "Ripes-optima-windows" from
+# the run's Artifacts section, unzip it and start Ripes.exe.
+# Python 3 must be installed on the computer that runs it.
+
+name: Build patched Ripes (Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      qt_version:
+        description: "Qt version (6.8 or newer)"
+        default: "6.10.3"
+        required: true
+
+env:
+  # The Ripes commit the patch was written against.
+  RIPES_COMMIT: dd0e2ebb7bfc373e5c161e82fec152a258751163
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Turn off line-ending conversion
+        run: git config --global core.autocrlf false
+
+      - name: Check out this repository (the Optima compiler)
+        uses: actions/checkout@v4
+        with:
+          path: optima-repo
+
+      - name: Find the compiler folder
+        shell: bash
+        run: |
+          # Finds optc.py wherever it was uploaded (up to 4 folders deep), as
+          # long as the ripes/optima-ripes.patch file is next to it.
+          dir=""
+          for f in $(find optima-repo -maxdepth 5 -name optc.py -not -path "*/.git/*"); do
+            d=$(dirname "$f")
+            if [ -f "$d/ripes/optima-ripes.patch" ]; then dir="$d"; break; fi
+          done
+          if [ -z "$dir" ]; then
+            echo "::error::Could not find optc.py with ripes/optima-ripes.patch next to it. Upload the whole optima folder (optc.py, optima/, ripes/, examples/, ...)."
+            find optima-repo -maxdepth 3 -not -path "*/.git*" | head -50
+            exit 1
+          fi
+          echo "OPTIMA_SRC=$(cd "$dir" && pwd -W)" >> "$GITHUB_ENV"
+          echo "Compiler folder: $dir"
+
+      - name: Download Ripes
+        shell: bash
+        run: |
+          git clone --no-checkout https://github.com/mortbopet/Ripes.git ripes
+          cd ripes
+          git checkout "$RIPES_COMMIT"
+          git submodule update --init --recursive
+
+      - name: Apply the Optima patch
+        shell: bash
+        run: |
+          cd ripes
+          git apply --whitespace=nowarn "$OPTIMA_SRC/ripes/optima-ripes.patch"
+          git status --short
+
+      - name: Set up the Visual Studio compiler
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@master
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ inputs.qt_version }}
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: qtcharts
+          cache: true
+
+      - name: Build Ripes
+        shell: bash
+        run: |
+          cd ripes
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=cl \
+            -DCMAKE_CXX_COMPILER=cl \
+            -DOPTIMA_DIR="$OPTIMA_SRC"
+          cmake --build build
+
+      - name: Package Ripes, its Qt files and the Optima compiler
+        shell: bash
+        run: |
+          mkdir -p package/Ripes-optima
+          cd package/Ripes-optima
+          cp ../../ripes/build/Ripes.exe .
+          windeployqt.exe --release -svg --no-compiler-runtime \
+            --no-opengl-sw --no-translations Ripes.exe
+          # The Visual C++ runtime, so the target computer does not need it installed.
+          for dll in msvcp140.dll msvcp140_1.dll msvcp140_2.dll vcruntime140.dll vcruntime140_1.dll concrt140.dll; do
+            if [ -f "/c/Windows/System32/$dll" ]; then cp "/c/Windows/System32/$dll" .; fi
+          done
+          # The compiler goes in an "optima" folder next to Ripes.exe, where
+          # Ripes looks for it.
+          mkdir optima
+          cp -r "$OPTIMA_SRC/optc.py" "$OPTIMA_SRC/optima" "$OPTIMA_SRC/examples" optima/
+          for f in docs README.md; do
+            if [ -e "$OPTIMA_SRC/$f" ]; then cp -r "$OPTIMA_SRC/$f" optima/; fi
+          done
+          find optima -name __pycache__ -type d -prune -exec rm -rf {} +
+          cat > README.txt <<'TXT'
+          Ripes with Optima support (Windows x64)
+
+          1. Install Python 3 from python.org (tick "Add Python to PATH").
+          2. Start Ripes.exe.
+          3. On the Editor tab choose the "Optima" input type, or open
+             File > Load example > Optima.
+
+          Keep the optima folder next to Ripes.exe: Ripes runs optima\optc.py
+          to compile your programs. To use a compiler somewhere else, set its
+          path under Edit > Settings > Compiler.
+          TXT
+
+      - name: Set up Python (for the test run)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Test run (compile and run an example in Ripes' command-line mode)
+        continue-on-error: true
+        shell: bash
+        run: |
+          cd package/Ripes-optima
+          timeout 300 ./Ripes.exe --mode cli --src optima/examples/quadratic.opt \
+            -t optima --proc RV32_SS --isaexts M > run.txt 2>&1 || true
+          cat run.txt
+          # Fails this step (only) if the expected result is missing; the
+          # package is uploaded either way.
+          grep -q "x = 3  y = -1" run.txt
+          rm -f run.txt
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ripes-optima-windows
+          path: package/
+          retention-days: 30
